@@ -18,6 +18,12 @@ jobs:
         with:
           channel: 'stable'
 
+      - name: Init Flutter Project
+        run: |
+          flutter create --platforms=ios .
+          git checkout lib/main.dart pubspec.yaml || true
+        working-directory: ./client
+
       - name: Install dependencies
         run: flutter pub get
         working-directory: ./client
@@ -38,11 +44,3 @@ jobs:
         with:
           name: ios-ipa
           path: client/build/ios/iphoneos/app.ipa
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: client/build/ios/iphoneos/app.ipa
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
