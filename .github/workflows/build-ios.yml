@@ -22,6 +22,7 @@ jobs:
         run: |
           flutter create --platforms=ios .
           git checkout lib/main.dart pubspec.yaml || true
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Required for AR gameplay and QR scanning'" ios/Runner/Info.plist
         working-directory: ./client
 
       - name: Install dependencies

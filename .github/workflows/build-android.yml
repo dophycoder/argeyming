@@ -28,6 +28,7 @@ jobs:
         run: |
           flutter create --platforms=android .
           git checkout lib/main.dart pubspec.yaml || true
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.CAMERA" />' android/app/src/main/AndroidManifest.xml
         working-directory: ./client
 
       - name: Install dependencies

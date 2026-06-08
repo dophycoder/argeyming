@@ -4,64 +4,89 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
 // --- STATE ---
-const players = {};
-const HIT_RADIUS = 50;
+const rooms = {}; 
 
 // --- NETWORK LOGIC ---
 io.on('connection', (socket) => {
-  console.log(`Player connected: ${socket.id}`);
+  console.log(`Connected: ${socket.id}`);
 
-  socket.on('join', (data) => {
-    players[socket.id] = {
-      x: data.x,
-      y: data.y,
-      hp: 100
+  socket.on('createRoom', () => {
+    const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    rooms[roomId] = {
+      players: { [socket.id]: { ready: false, hp: 100 } },
+      state: 'lobby'
     };
-    io.emit('stateUpdate', players);
+    socket.join(roomId);
+    socket.emit('roomCreated', { roomId });
+  });
+
+  socket.on('joinRoom', (data) => {
+    const roomId = data.roomId;
+    if (rooms[roomId] && Object.keys(rooms[roomId].players).length < 2) {
+      rooms[roomId].players[socket.id] = { ready: false, hp: 100 };
+      socket.join(roomId);
+      io.to(roomId).emit('playerJoined', { players: rooms[roomId].players });
+    } else {
+      socket.emit('error', { message: 'Room not found or full' });
+    }
+  });
+
+  socket.on('setReady', (data) => {
+    const roomId = data.roomId;
+    if (rooms[roomId] && rooms[roomId].players[socket.id]) {
+      rooms[roomId].players[socket.id].ready = true;
+      const pKeys = Object.keys(rooms[roomId].players);
+      if (pKeys.length === 2 && rooms[roomId].players[pKeys[0]].ready && rooms[roomId].players[pKeys[1]].ready) {
+        rooms[roomId].state = 'playing';
+        io.to(roomId).emit('gameStart', { players: rooms[roomId].players });
+      } else {
+        io.to(roomId).emit('playerReady', { playerId: socket.id });
+      }
+    }
   });
 
   socket.on('move', (data) => {
-    if (players[socket.id]) {
-      players[socket.id].x = data.x;
-      players[socket.id].y = data.y;
-      io.emit('stateUpdate', players);
+    const roomId = data.roomId;
+    if (rooms[roomId] && rooms[roomId].players[socket.id]) {
+      socket.to(roomId).emit('enemyMove', { id: socket.id, yaw: data.yaw, pitch: data.pitch });
     }
   });
 
   socket.on('shoot', (data) => {
-    if (!players[socket.id]) return;
-    const shooter = players[socket.id];
-    
-    for (const [id, target] of Object.entries(players)) {
-      if (id !== socket.id) {
-        const dx = target.x - shooter.x;
-        const dy = target.y - shooter.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < HIT_RADIUS) {
-          target.hp -= 10;
-          if (target.hp < 0) target.hp = 0;
-          
-          io.to(id).emit('hit', { targetId: id, shooterId: socket.id });
-          io.emit('stateUpdate', players);
+    const roomId = data.roomId;
+    if (rooms[roomId] && rooms[roomId].state === 'playing') {
+      const pKeys = Object.keys(rooms[roomId].players);
+      const enemyId = pKeys.find(id => id !== socket.id);
+      
+      if (enemyId && data.hit) {
+        rooms[roomId].players[enemyId].hp -= 20;
+        if (rooms[roomId].players[enemyId].hp <= 0) {
+          rooms[roomId].players[enemyId].hp = 0;
+          io.to(roomId).emit('gameOver', { winner: socket.id });
+          delete rooms[roomId];
+        } else {
+          io.to(roomId).emit('hit', { targetId: enemyId, hp: rooms[roomId].players[enemyId].hp });
         }
       }
     }
   });
 
   socket.on('disconnect', () => {
-    console.log(`Player disconnected: ${socket.id}`);
-    delete players[socket.id];
-    io.emit('stateUpdate', players);
+    for (const roomId in rooms) {
+      if (rooms[roomId].players[socket.id]) {
+        socket.to(roomId).emit('error', { message: 'Opponent disconnected' });
+        delete rooms[roomId];
+      }
+    }
   });
+});
+
+// --- NETWORK ERROR HANDLING ---
+io.engine.on("connection_error", (err) => {
+  console.log(err.req, err.code, err.message, err.context);
 });
 
 server.listen(3000, () => {
