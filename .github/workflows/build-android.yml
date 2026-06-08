@@ -29,6 +29,8 @@ jobs:
           flutter create --platforms=android .
           git checkout lib/main.dart pubspec.yaml || true
           sed -i '/<application/i \    <uses-permission android:name="android.permission.CAMERA" />' android/app/src/main/AndroidManifest.xml
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 34/g' android/app/build.gradle
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 34/g' android/app/build.gradle
         working-directory: ./client
 
       - name: Install dependencies
